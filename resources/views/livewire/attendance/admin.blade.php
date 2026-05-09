@@ -38,12 +38,20 @@ new class extends Component {
     <div class="mx-auto w-full max-w-3xl px-4">
         <div class="mb-4 flex items-center justify-between gap-3">
             <h1 class="text-2xl font-bold text-slate-800">出欠名簿管理</h1>
-            <a
-                href="{{ route('attendance.index') }}"
-                class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
-            >
-                出欠確認表へ
-            </a>
+            <div class="flex items-center gap-2">
+                <a
+                    href="{{ route('attendance.index') }}"
+                    class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+                >
+                    出欠確認表へ
+                </a>
+                <a
+                    href="{{ route('attendance.calendar') }}"
+                    class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                    カレンダーへ
+                </a>
+            </div>
         </div>
 
         <section class="mb-4 rounded-xl bg-white p-4 shadow-sm">

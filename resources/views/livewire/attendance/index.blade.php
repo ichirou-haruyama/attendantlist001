@@ -1,9 +1,13 @@
 <?php
 
+use App\Models\AttendanceRecord;
 use App\Models\Member;
+use Carbon\CarbonImmutable;
 use Livewire\Volt\Component;
 
 new class extends Component {
+    public string $currentMonth = '';
+    public string $selectedDate = '';
     public int $total = 0;
     public int $present = 0;
     public int $absent = 0;
@@ -11,6 +15,18 @@ new class extends Component {
 
     public function mount(): void
     {
+        $date = request()->query('date');
+
+        if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
+            $selected = CarbonImmutable::createFromFormat('Y-m-d', $date);
+            $this->selectedDate = $selected->format('Y-m-d');
+            $this->currentMonth = $selected->format('Y-m');
+        } else {
+            $today = CarbonImmutable::today();
+            $this->selectedDate = $today->format('Y-m-d');
+            $this->currentMonth = $today->format('Y-m');
+        }
+
         $this->refreshSummary();
     }
 
@@ -19,7 +35,17 @@ new class extends Component {
      */
     public function members()
     {
-        return Member::query()->orderBy('id')->get();
+        $members = Member::query()->orderBy('id')->get();
+        $records = AttendanceRecord::query()
+            ->whereDate('attendance_date', $this->selectedDate)
+            ->get()
+            ->keyBy('member_id');
+
+        return $members->map(function (Member $member) use ($records) {
+            $member->daily_status = $records[$member->id]->status ?? Member::STATUS_UNCHECKED;
+
+            return $member;
+        });
     }
 
     /**
@@ -28,9 +54,67 @@ new class extends Component {
     public function refreshSummary(): void
     {
         $this->total = Member::query()->count();
-        $this->present = Member::query()->where('status', Member::STATUS_PRESENT)->count();
-        $this->absent = Member::query()->where('status', Member::STATUS_ABSENT)->count();
-        $this->unchecked = Member::query()->where('status', Member::STATUS_UNCHECKED)->count();
+        $this->present = AttendanceRecord::query()
+            ->whereDate('attendance_date', $this->selectedDate)
+            ->where('status', Member::STATUS_PRESENT)
+            ->count();
+        $this->absent = AttendanceRecord::query()
+            ->whereDate('attendance_date', $this->selectedDate)
+            ->where('status', Member::STATUS_ABSENT)
+            ->count();
+        $this->unchecked = max($this->total - $this->present - $this->absent, 0);
+    }
+
+    public function updatedCurrentMonth(string $value): void
+    {
+        $month = CarbonImmutable::createFromFormat('Y-m', $value)->startOfMonth();
+        $selected = CarbonImmutable::parse($this->selectedDate);
+
+        if (! $selected->isSameMonth($month)) {
+            $this->selectedDate = $month->format('Y-m-d');
+        }
+
+        $this->refreshSummary();
+    }
+
+    public function updatedSelectedDate(string $value): void
+    {
+        $date = CarbonImmutable::createFromFormat('Y-m-d', $value);
+        $this->currentMonth = $date->format('Y-m');
+        $this->refreshSummary();
+    }
+
+    public function monthOptions(): array
+    {
+        $base = CarbonImmutable::today()->startOfMonth();
+        $options = [];
+
+        for ($i = -12; $i <= 12; $i++) {
+            $month = $base->addMonths($i);
+            $options[] = [
+                'value' => $month->format('Y-m'),
+                'label' => $month->format('Y年n月'),
+            ];
+        }
+
+        return $options;
+    }
+
+    public function dayOptions(): array
+    {
+        $month = CarbonImmutable::createFromFormat('Y-m', $this->currentMonth)->startOfMonth();
+        $daysInMonth = $month->daysInMonth;
+        $options = [];
+
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = $month->day($day);
+            $options[] = [
+                'value' => $date->format('Y-m-d'),
+                'label' => $date->format('j日'),
+            ];
+        }
+
+        return $options;
     }
 
     /**
@@ -42,7 +126,16 @@ new class extends Component {
             return;
         }
 
-        Member::query()->whereKey($memberId)->update(['status' => $status]);
+        AttendanceRecord::query()->updateOrCreate(
+            [
+                'member_id' => $memberId,
+                'attendance_date' => $this->selectedDate,
+            ],
+            [
+                'status' => $status,
+            ],
+        );
+
         $this->refreshSummary();
     }
 
@@ -51,7 +144,9 @@ new class extends Component {
      */
     public function resetStatuses(): void
     {
-        Member::query()->update(['status' => Member::STATUS_UNCHECKED]);
+        AttendanceRecord::query()
+            ->whereDate('attendance_date', $this->selectedDate)
+            ->delete();
         $this->refreshSummary();
     }
 }; ?>
@@ -60,12 +155,42 @@ new class extends Component {
     <div class="mx-auto w-full max-w-3xl px-4">
         <div class="mb-4 flex items-center justify-between gap-3">
             <h1 class="text-2xl font-bold text-slate-800">出席確認表</h1>
-            <a
-                href="{{ route('attendance.admin') }}"
-                class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
-            >
-                管理画面へ
-            </a>
+            <div class="flex items-center gap-2">
+                <a
+                    href="{{ route('attendance.calendar') }}"
+                    class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                    カレンダーへ
+                </a>
+                <a
+                    href="{{ route('attendance.admin') }}"
+                    class="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+                >
+                    管理画面へ
+                </a>
+            </div>
+        </div>
+
+        <div class="mb-4 rounded-xl bg-white p-4 shadow-sm">
+            <p class="mb-2 text-sm font-semibold text-slate-700">対象日: {{ \Carbon\CarbonImmutable::parse($selectedDate)->format('Y年n月j日') }}</p>
+            <div class="grid gap-3 md:grid-cols-2">
+                <div>
+                    <label for="month" class="mb-1 block text-sm font-medium text-slate-700">月を選択</label>
+                    <select id="month" wire:model.live="currentMonth" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                        @foreach ($this->monthOptions() as $month)
+                            <option value="{{ $month['value'] }}">{{ $month['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label for="day" class="mb-1 block text-sm font-medium text-slate-700">日付を選択</label>
+                    <select id="day" wire:model.live="selectedDate" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                        @foreach ($this->dayOptions() as $day)
+                            <option value="{{ $day['value'] }}">{{ $day['label'] }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
         </div>
 
         <div class="mb-4 grid grid-cols-2 gap-3">
@@ -94,7 +219,7 @@ new class extends Component {
                     <p class="mb-2 text-sm text-slate-500">{{ $member->company ?? '所属未設定' }}</p>
 
                     <p class="mb-3 text-sm text-slate-500">状態：</p>
-                    <x-status-badge :status="$member->status_label" class="mb-3" />
+                    <x-status-badge :status="$member->daily_status" class="mb-3" />
 
                     <div class="grid grid-cols-2 gap-3">
                         <button
