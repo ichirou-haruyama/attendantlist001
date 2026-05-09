@@ -6,7 +6,6 @@ use Carbon\CarbonImmutable;
 use Livewire\Volt\Component;
 
 new class extends Component {
-    public string $currentMonth = '';
     public string $selectedDate = '';
     public int $total = 0;
     public int $present = 0;
@@ -20,11 +19,9 @@ new class extends Component {
         if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
             $selected = CarbonImmutable::createFromFormat('Y-m-d', $date);
             $this->selectedDate = $selected->format('Y-m-d');
-            $this->currentMonth = $selected->format('Y-m');
         } else {
             $today = CarbonImmutable::today();
             $this->selectedDate = $today->format('Y-m-d');
-            $this->currentMonth = $today->format('Y-m');
         }
 
         $this->refreshSummary();
@@ -63,58 +60,6 @@ new class extends Component {
             ->where('status', Member::STATUS_ABSENT)
             ->count();
         $this->unchecked = max($this->total - $this->present - $this->absent, 0);
-    }
-
-    public function updatedCurrentMonth(string $value): void
-    {
-        $month = CarbonImmutable::createFromFormat('Y-m', $value)->startOfMonth();
-        $selected = CarbonImmutable::parse($this->selectedDate);
-
-        if (! $selected->isSameMonth($month)) {
-            $this->selectedDate = $month->format('Y-m-d');
-        }
-
-        $this->refreshSummary();
-    }
-
-    public function updatedSelectedDate(string $value): void
-    {
-        $date = CarbonImmutable::createFromFormat('Y-m-d', $value);
-        $this->currentMonth = $date->format('Y-m');
-        $this->refreshSummary();
-    }
-
-    public function monthOptions(): array
-    {
-        $base = CarbonImmutable::today()->startOfMonth();
-        $options = [];
-
-        for ($i = -12; $i <= 12; $i++) {
-            $month = $base->addMonths($i);
-            $options[] = [
-                'value' => $month->format('Y-m'),
-                'label' => $month->format('Y年n月'),
-            ];
-        }
-
-        return $options;
-    }
-
-    public function dayOptions(): array
-    {
-        $month = CarbonImmutable::createFromFormat('Y-m', $this->currentMonth)->startOfMonth();
-        $daysInMonth = $month->daysInMonth;
-        $options = [];
-
-        for ($day = 1; $day <= $daysInMonth; $day++) {
-            $date = $month->day($day);
-            $options[] = [
-                'value' => $date->format('Y-m-d'),
-                'label' => $date->format('j日'),
-            ];
-        }
-
-        return $options;
     }
 
     /**
@@ -172,25 +117,7 @@ new class extends Component {
         </div>
 
         <div class="mb-4 rounded-xl bg-white p-4 shadow-sm">
-            <p class="mb-2 text-sm font-semibold text-slate-700">対象日: {{ \Carbon\CarbonImmutable::parse($selectedDate)->format('Y年n月j日') }}</p>
-            <div class="grid gap-3 md:grid-cols-2">
-                <div>
-                    <label for="month" class="mb-1 block text-sm font-medium text-slate-700">月を選択</label>
-                    <select id="month" wire:model.live="currentMonth" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-                        @foreach ($this->monthOptions() as $month)
-                            <option value="{{ $month['value'] }}">{{ $month['label'] }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="day" class="mb-1 block text-sm font-medium text-slate-700">日付を選択</label>
-                    <select id="day" wire:model.live="selectedDate" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-                        @foreach ($this->dayOptions() as $day)
-                            <option value="{{ $day['value'] }}">{{ $day['label'] }}</option>
-                        @endforeach
-                    </select>
-                </div>
-            </div>
+            <p class="text-sm font-semibold text-slate-700">対象日: {{ \Carbon\CarbonImmutable::parse($selectedDate)->format('Y年n月j日') }}</p>
         </div>
 
         <div class="mb-4 grid grid-cols-2 gap-3">
@@ -245,7 +172,7 @@ new class extends Component {
             <button
                 type="button"
                 wire:click="resetStatuses"
-                wire:confirm="出欠状態をすべて未確認に戻します。よろしいですか？"
+                wire:confirm="このページの対象日（{{ \Carbon\CarbonImmutable::parse($selectedDate)->format('Y年n月j日') }}）の出欠状態をすべて未確認に戻します。よろしいですか？"
                 class="rounded-lg bg-orange-500 px-5 py-3 text-base font-bold text-white shadow-sm active:scale-[0.99]"
             >
                 出欠をリセット
